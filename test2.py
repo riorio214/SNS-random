@@ -58,7 +58,7 @@ def post():
     display_name = user.get('displayName', user['handle'])
     print(f"추첨 결과: {display_name} (@{user['handle']})")
 
-    txt = f"RT 추첨 결과🎰\n\n{display_name}님 (@{user['handle']}) 당첨을 축하드립니다! "
+    txt = f"RT 추첨 결과{display_name}님 (@{user['handle']}) 당첨을 축하드립니다! "
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
 
     headers = {"Authorization": "Bearer " + session.ATP_AUTH_TOKEN}
@@ -74,12 +74,5 @@ def post():
         }
     }
 
-    resp = requests.post(
-        session.ATP_HOST + "/xrpc/com.atproto.repo.createRecord",
-        json=data,
-        headers=headers
-    )
-    rkey = resp.json()['uri'].split('/')[-1]
-    print(f"추첨 결과 포스트가 정상적으로 등록되었습니다: https://bsky.app/profile/{bsky_username}/post/{rkey}")
 
 post()
