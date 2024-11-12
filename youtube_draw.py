@@ -1,4 +1,3 @@
-youtube_draw_code = """
 # 필요한 라이브러리를 가져옵니다.
 import random  # 무작위 추첨을 위한 random 모듈
 import json  # JSON 파일 입출력에 사용할 json 모듈
@@ -105,11 +104,3 @@ class YouTubeDraw:
         else:
             # 모든 댓글이 이미 당첨되었을 경우
             return None, "모든 댓글이 이미 당첨되었습니다."
-
-
-
-"""
-
-#youtube_draw.py를 저장
-with open('youtube_draw.py', 'w', encoding='utf-8') as f:
-    f.write(youtube_draw_code.strip())
