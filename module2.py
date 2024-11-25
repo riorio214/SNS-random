@@ -48,17 +48,58 @@ class BlueskyDraw:
         ).json()
         return resp  # 결과 반환
 
-    # 게시물을 리포스트한 모든 사용자 정보를 가져오는 함수
+    # 리포스트한 모든 사용자 정보를 가져오는 함수
     def get_all_reposted_by(self):
-        reposted_by = []  # 리포스트한 사용자 목록을 저장할 리스트
-        cursor = None  # 초기 커서는 None으로 설정
+        reposted_by = []
+        cursor = None
         while True:
-            resp = self.get_reposted_by(cursor)  # API 호출로 리포스트한 사용자 정보 가져오기
-            reposted_by += resp['repostedBy']  # 사용자 목록을 누적
+            resp = self.get_reposted_by(cursor)
+            # 'repostedBy' 키에서 사용자 정보 리스트를 추가
+            reposted_by += resp.get('repostedBy', [])
+
             if 'cursor' not in resp:
                 break  # 다음 페이지가 없으면 종료
-            cursor = resp['cursor']  # 다음 페이지를 위한 커서 갱신
+            cursor = resp['cursor']
+
         return reposted_by  # 전체 리포스트한 사용자 목록 반환
+
+    # 특정 게시물을 좋아요한 사용자 정보를 가져오는 함수
+    def get_likes(self, cursor=None):
+        headers = {"Authorization": "Bearer " + self.session.ATP_AUTH_TOKEN}
+        params = {
+            "uri": f'at://{self.session.DID}/app.bsky.feed.post/{self.rkey}',
+            "limit": 50
+        }
+        if cursor:
+            params['cursor'] = cursor
+
+        try:
+            resp = requests.get(
+                self.session.ATP_HOST + "/xrpc/app.bsky.feed.getLikes",
+                headers=headers,
+                params=params
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            print(f"API 요청 오류: {e}")
+            return {}
+
+    # 좋아요한 모든 사용자 정보를 가져오는 함수
+    def get_all_likes(self):
+        liked_by = []
+        cursor = None
+        while True:
+            resp = self.get_likes(cursor)
+            # 'likes' 키에서 각 사용자 정보를 'actor'로 접근하여 리스트에 추가
+            likes_data = resp.get('likes', [])
+            liked_by += [like['actor'] for like in likes_data]  # 'actor' 정보만 추출하여 리스트에 추가
+
+            if 'cursor' not in resp:
+                break  # 다음 페이지가 없으면 종료
+            cursor = resp['cursor']
+
+        return liked_by  # 전체 좋아요한 사용자 목록 반환
 
     # 당첨자를 JSON 파일에 저장하는 함수
     def save_winner(self, winner, filename='bluesky_winner.json'):
@@ -97,16 +138,28 @@ class BlueskyDraw:
         return winners  # 당첨자 목록 반환
 
     # 무작위로 당첨자를 추첨하는 함수
-    def random_pick(self):
-        pool = [user for user in self.get_all_reposted_by() if user['handle'] != self.username]  # 본인을 제외한 리포스트 사용자 목록
-        picked_winners = self.load_winners()  # 기존 당첨자 목록 불러오기
+    def random_pick(self, target_type="reposted"):
+        # target_type에 따라 추첨 대상을 설정
+        if target_type == "likes":
+            pool = [user for user in self.get_all_likes() if user['handle'] != self.username]
+        elif target_type == "reposted":
+            pool = [user for user in self.get_all_reposted_by() if user['handle'] != self.username]
+        else:
+            raise ValueError("잘못된 추첨 타입입니다. 'likes' 또는 'reposted'만 가능합니다.")
+
+        # pool이 비어 있으면 사용자에게 경고를 표시
+        if not pool:
+            raise ValueError("참여자가 없습니다. 목록을 확인하세요.")
 
         # 중복 당첨을 방지하여 아직 당첨되지 않은 사용자들만 추출
+        picked_winners = self.load_winners()
         pool = [user for user in pool if user['handle'] not in [winner['handle'] for winner in picked_winners]]
 
-        if not pool:  # 당첨 가능한 사용자가 없으면 예외 발생
+        if not pool:
             raise ValueError("당첨자가 없습니다. 본인을 제외하고 모두 당첨되었습니다.")
+        
         return random.choice(pool)  # 무작위로 한 명 선택
+
 
     # 당첨 결과를 게시하는 함수
     def post_result(self):

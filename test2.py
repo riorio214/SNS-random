@@ -76,44 +76,59 @@ def pick_youtube_winner_gui():
     except Exception as e:
         messagebox.showerror("오류", f"추첨 중 오류 발생: {str(e)}")  # 오류 처리
 
-# 블루스카이 추첨 결과를 포스트하는 함수
 def post_to_bluesky(username, password, url, draw_type):
     try:
         bsky_draw = BlueskyDraw(username, password, url)
-        
-        # 추첨 결과 얻기
-        result = bsky_draw.post_result()
-        
-        # target_type에 따라 좋아요 또는 리포스트 추첨
+
+        # 추첨 대상 데이터를 가져오기
         if draw_type == "likes":
-            result = bsky_draw.random_pick(target_type='likes')
+            result = bsky_draw.random_pick(target_type='likes')  # 무작위 추첨
         elif draw_type == "reposted":
-            result = bsky_draw.random_pick(target_type='reposted')
+            result = bsky_draw.random_pick(target_type='reposted')  # 무작위 추첨
         else:
             raise ValueError("추첨 타입이 잘못되었습니다.")
-        
 
-        # result가 유효한지 확인 후 결과 창에 표시
+        # 결과 유효성 확인
         if result and 'handle' in result:
             result_window = tk.Toplevel(root)
             result_window.title("추첨 결과")
-            result_window.attributes('-topmost', True)  # 결과 창을 최상위로 설정
+            result_window.attributes('-topmost', True)  # 결과 창 최상위로 설정
 
-            # 당첨자 이름과 핸들을 포함한 결과 텍스트 생성
+            # 결과 데이터 준비
             display_name = result.get('displayName', result['handle'])
             result_text = f"축하드립니다! 당첨자: {display_name} (@{result['handle']})"
 
+            # 결과 표시
             tk.Label(result_window, text=result_text, padx=20, pady=20).pack()
 
-            # 당첨자 정보를 JSON 파일에 저장
-            bsky_draw.save_winner({"platform": "Bluesky", "displayName": display_name, "handle": result['handle']}, "bluesky_winner.json")
+            # 게시를 수행하는 버튼
+            def post_winner():
+                try:
+                    # BlueskyDraw의 post_result 메서드 호출
+                    post_result_response = bsky_draw.post_result()
+                    print("게시물 생성 결과:", post_result_response)  # 디버깅을 위한 출력
+
+                    # 성공 메시지 표시
+                    messagebox.showinfo("성공", "추첨 결과가 성공적으로 게시되었습니다!")
+                    result_window.destroy()
+                except Exception as e:
+                    messagebox.showerror("오류", f"게시 중 오류 발생: {str(e)}")
+
+            # 게시 버튼 추가
+            post_button = tk.Button(result_window, text="결과 게시하기", command=post_winner)
+            post_button.pack(pady=10)
+
+            # 취소 버튼 추가
+            cancel_button = tk.Button(result_window, text="취소", command=result_window.destroy)
+            cancel_button.pack(pady=5)
         else:
-            messagebox.showwarning("경고", "결과를 가져올 수 없습니다. 추첨을 다시 시도해주세요.")  # 결과가 없으면 경고 메시지
+            messagebox.showwarning("경고", "결과를 가져올 수 없습니다. 추첨을 다시 시도해주세요.")  # 결과 없음 경고
 
     except ValueError as ve:
         messagebox.showerror("오류", f"로그인 실패: {str(ve)}")
     except Exception as e:
         messagebox.showerror("오류", f"오류 발생: {str(e)}")
+
 
 # 블루스카이 추첨 스레드 시작 함수
 def start_bluesky_draw():
