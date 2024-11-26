@@ -100,6 +100,17 @@ def show_winners_window(platform):
             text_widget.insert(tk.END, winner_text)
         text_widget.insert(tk.END, "\n")  # 구분선
 
+    # 좋아요 추첨 당첨자 목록 출력
+    if platform == "Bluesky" and likes_winners:
+        text_widget.config(state=tk.NORMAL)
+        text_widget.insert(tk.END, f"\n** {platform} 좋아요 당첨자 **\n", "bold")
+        for winner in likes_winners:
+            display_name = winner.get('displayName', '알 수 없음')
+            handle = winner.get('handle', '알 수 없음')
+            winner_text = f"당첨자: {display_name} (@{handle})\n"
+            text_widget.insert(tk.END, winner_text)
+        text_widget.insert(tk.END, "\n")  # 구분선
+
     # 당첨자가 없으면
     if not likes_winners and not reposted_winners:
         text_widget.insert(tk.END, "당첨자가 없습니다.\n")
@@ -159,7 +170,7 @@ def post_to_bluesky(username, password, url, draw_type):
             def post_winner():
                 try:
                     # BlueskyDraw의 post_result 메서드 호출
-                    post_result_response = bsky_draw.post_result()
+                    post_result_response = bsky_draw.post_result(draw_type=draw_type)  # draw_type을 전달하여 게시물에 반영
                     print("게시물 생성 결과:", post_result_response)  # 디버깅을 위한 출력
 
                     # 성공 메시지 표시
@@ -167,7 +178,7 @@ def post_to_bluesky(username, password, url, draw_type):
                     result_window.destroy()
                 except Exception as e:
                     messagebox.showerror("오류", f"게시 중 오류 발생: {str(e)}")
-                        # 게시하지 않음 버튼 (게시하지 않고 당첨자 정보를 저장만 함)
+                    # 게시하지 않음 버튼 (게시하지 않고 당첨자 정보를 저장만 함)
 
             def cancel_post():
                 try:
@@ -199,6 +210,7 @@ def post_to_bluesky(username, password, url, draw_type):
         messagebox.showerror("오류", f"로그인 실패: {str(ve)}")
     except Exception as e:
         messagebox.showerror("오류", f"오류 발생: {str(e)}")
+
 
 
 # 블루스카이 추첨 스레드 시작 함수

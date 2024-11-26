@@ -171,19 +171,25 @@ class BlueskyDraw:
         
         return random.choice(pool)  # 무작위로 한 명 선택
 
-
-
     # 당첨 결과를 게시하는 함수
-    def post_result(self):
-        user = self.random_pick()  # 무작위로 당첨자 추첨
+    def post_result(self, draw_type):
+        if draw_type == "likes":
+            result_type = "좋아요 추첨 결과"
+        elif draw_type == "reposted":
+            result_type = "리트윗 추첨 결과"
+        else:
+            raise ValueError("추첨 타입이 잘못되었습니다.")
+
+        user = self.random_pick(target_type=draw_type)  # 무작위로 당첨자 추첨
         display_name = user.get('displayName', user['handle'])  # 당첨자의 표시 이름 가져오기
-        print(f"Draw result: {display_name} (@{user['handle']})")  # 콘솔에 당첨자 정보 출력
+        print(f"{result_type}: {display_name} (@{user['handle']})")  # 콘솔에 당첨자 정보 출력
 
         # 당첨자가 '알 수 없음'인 경우, 다른 값으로 대체
         if display_name == "알 수 없음" or not display_name:
             display_name = user['handle']  # '알 수 없음'인 경우 handle로 대체
 
-        txt = f"축하드립니다! {display_name} (@{user['handle']}) 당첨되셨습니다!!"  # 축하 메시지 작성
+        # 축하 메시지 작성
+        txt = f"축하드립니다! {display_name} (@{user['handle']}) {result_type} 당첨되셨습니다!!"
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')  # 현재 시간을 UTC로 표시
 
         headers = {"Authorization": "Bearer " + self.session.ATP_AUTH_TOKEN}  # 인증 토큰 설정
@@ -208,8 +214,8 @@ class BlueskyDraw:
             rkey = resp.json()['uri'].split('/')[-1]
             print(f"축하드립니다!: https://bsky.app/profile/{self.username}/post/{rkey}")  # 게시물 링크 출력
 
-            # 당첨자 정보를 파일에 저장 (target_type="reposted")
-            self.save_winner({"platform": "Bluesky", "handle": user['handle'], "displayName": display_name}, target_type="reposted")
+            # 당첨자 정보를 파일에 저장
+            self.save_winner({"platform": "Bluesky", "handle": user['handle'], "displayName": display_name}, target_type=draw_type)
 
             return {"text": txt, "handle": user['handle']}  # 결과 반환
         else:
