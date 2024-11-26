@@ -1,10 +1,9 @@
-# GUI와 멀티스레딩을 위한 라이브러리를 가져옵니다.
-import tkinter as tk  # GUI 애플리케이션을 구축하기 위한 tkinter 모듈
-import threading  # GUI의 비동기 작업을 위해 사용할 threading 모듈
-from tkinter import messagebox, Menu  # tkinter의 메시지 박스와 메뉴 기능
-import json  # 당첨자 정보를 JSON 파일로 관리하기 위한 json 모듈
-from youtube_draw import YouTubeDraw  # 유튜브 추첨 기능을 담은 YouTubeDraw 클래스
-from bluesky_draw import BlueskyDraw  # 블루스카이 추첨 기능을 담은 BlueskyDraw 클래스
+import tkinter as tk
+import threading
+from tkinter import messagebox, Menu
+import json
+from youtube_draw import YouTubeDraw  # 유튜브 추첨을 위한 모듈
+from bluesky_draw import BlueskyDraw  # 블루스카이 추첨을 위한 모듈
 
 # 유튜브 API 키
 YOUTUBE_API_KEY = "AIzaSyB_WGp4tCe7GZ0T8w-e5MOEc6jQ4Yc67Gs"
@@ -13,203 +12,291 @@ YOUTUBE_API_KEY = "AIzaSyB_WGp4tCe7GZ0T8w-e5MOEc6jQ4Yc67Gs"
 def clean_winners_file(winners_window, filename):
     try:
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("")  # 파일을 비웁니다.
-        tk.Label(winners_window, text="초기화 되었습니다.").pack()
+            f.write("")  # 파일 내용 초기화
+
+        # 블루스카이의 경우 리트윗 당첨자 파일도 초기화
+        if "bluesky" in filename.lower():
+            reposted_filename = filename.replace("likes", "reposted")  # "likes"를 "reposted"로 변경
+            with open(reposted_filename, 'w', encoding='utf-8') as f:
+                f.write("")  # 리트윗 파일도 초기화
+
+        # 메시지 표시용 Label 생성
+        if not hasattr(winners_window, "message_label"):
+            winners_window.message_label = tk.Label(winners_window, text="초기화 되었습니다.")
+            winners_window.message_label.pack()
+        else:
+            winners_window.message_label.config(text="초기화 되었습니다.")  # 기존 Label 업데이트
+
+        # 초기화 후, 당첨자 목록을 새로 불러오기
+        winners_window.after(1000, lambda: show_winners_window(winners_window.title().split()[0]))  # 1초 후 목록 새로고침
+
     except FileNotFoundError:
         print("파일을 찾을 수 없습니다.")
 
-# 당첨자 목록을 표시하는 함수
+
+
+# 당첨자 목록을 보여주는 창
+# 기존 당첨자 목록 창 참조를 저장할 변수
+winner_windows = {}
+
+# 당첨자 목록을 보여주는 창
 def show_winners_window(platform):
-    # 각 플랫폼에 맞는 당첨자 파일을 선택
-    filename = "youtube_winner.json" if platform == "YouTube" else "bluesky_winner.json"
+    global winner_windows
+
+    # 기존에 창이 열려 있다면 닫기
+    if platform in winner_windows and winner_windows[platform].winfo_exists():
+        winner_windows[platform].destroy()
+
+    if platform == "Bluesky":
+        likes_filename = "bluesky_likes_winner.json"
+        reposted_filename = "bluesky_reposted_winner.json"
+    else:
+        likes_filename = "youtube_winner.json"
+        reposted_filename = None  # 유튜브는 리트윗 파일이 없으므로 None 처리
+
     try:
-        # JSON 파일을 열어 당첨자 목록을 읽어옴
-        with open(filename, 'r', encoding='utf-8') as f:
-            winners = json.load(f)
+        # 유튜브의 경우 댓글 당첨자만 읽음
+        with open(likes_filename, 'r', encoding='utf-8') as f:
+            likes_winners = json.load(f)  # JSON 파일에서 당첨자 데이터 읽기
     except (FileNotFoundError, json.JSONDecodeError):
-        winners = []  # 파일이 없거나 비어있을 경우 빈 리스트로 초기화
+        likes_winners = []  # 파일이 없거나 오류가 나면 빈 리스트로 초기화
 
-    # 새 창 생성
-    winners_window = tk.Toplevel(root)
+    try:
+        # 블루스카이의 경우 리트윗 당첨자 목록도 읽음
+        if platform == "Bluesky" and reposted_filename:
+            with open(reposted_filename, 'r', encoding='utf-8') as f:
+                reposted_winners = json.load(f)  # JSON 파일에서 리트윗 당첨자 데이터 읽기
+        else:
+            reposted_winners = []  # 유튜브는 리트윗 당첨자가 없으므로 빈 리스트
+    except (FileNotFoundError, json.JSONDecodeError):
+        reposted_winners = []  # 파일이 없거나 오류가 나면 빈 리스트로 초기화
+
+    winners_window = tk.Toplevel(root)  # 새로운 윈도우 생성
     winners_window.title(f"{platform} 당첨자 목록")
+    winner_windows[platform] = winners_window  # 창 참조 저장
 
-    # 읽기 전용 Text 위젯 생성
-    text_widget = tk.Text(winners_window, width=80, height=20, wrap=tk.WORD, state=tk.DISABLED)
+    text_widget = tk.Text(winners_window, width=80, height=20, wrap=tk.WORD, state=tk.DISABLED)  # 텍스트 위젯
     text_widget.pack(padx=20, pady=10)
 
-    # 당첨자가 있을 경우
-    if winners:
-        for winner in winners:
-            # 유튜브일 경우 이름과 댓글 정보 출력
-            if platform == "YouTube":
-                name = winner.get('name', '알 수 없음')
-                comment = winner.get('comment', '알 수 없음')
-                winner_text = f"{platform} 당첨자: {name} - 댓글: {comment}\n"
-            else:  # 블루스카이일 경우 이름과 핸들 정보 출력
-                display_name = winner.get('displayName', '알 수 없음')
-                handle = winner.get('handle', '알 수 없음')
-                winner_text = f"{platform} 당첨자: {display_name} (@{handle})\n"
-            
-            # Text 위젯에 당첨자 정보 삽입 (읽기 전용 상태에서는 삽입이 불가능하므로, 상태를 변경)
-            text_widget.config(state=tk.NORMAL)  # 쓰기 가능 상태로 설정
-            text_widget.insert(tk.END, winner_text)  # 당첨자 정보 삽입
-            text_widget.config(state=tk.DISABLED)  # 다시 읽기 전용 상태로 설정
-    else:
-        # 당첨자가 없을 경우 안내 메시지 출력
+    # 유튜브는 댓글 당첨자만 출력
+    if platform == "YouTube" and likes_winners:
         text_widget.config(state=tk.NORMAL)
-        text_widget.insert(tk.END, "당첨자가 없습니다.\n")
-        text_widget.config(state=tk.DISABLED)
+        text_widget.insert(tk.END, f"\n** {platform} 댓글 당첨자 **\n", "bold")
+        for winner in likes_winners:
+            name = winner.get('name', '알 수 없음')
+            comment = winner.get('comment', '알 수 없음')
+            winner_text = f"당첨자: {name} - 댓글: {comment}\n"
+            text_widget.insert(tk.END, winner_text)
+        text_widget.insert(tk.END, "\n")  # 구분선
 
-    # 당첨자 목록 초기화 버튼 생성
-    clear_button = tk.Button(winners_window, text="당첨자 목록 초기화", command=lambda: clean_winners_file(winners_window, filename))
-    clear_button.pack(pady=5)
-    
-# 유튜브 추첨을 위한 GUI 함수
+    # 블루스카이와 유튜브의 리트윗 당첨자 목록 출력
+    if reposted_winners:
+        text_widget.config(state=tk.NORMAL)
+        text_widget.insert(tk.END, f"\n** {platform} 리트윗 당첨자 **\n", "bold")
+        for winner in reposted_winners:
+            display_name = winner.get('displayName', '알 수 없음')
+            handle = winner.get('handle', '알 수 없음')
+            winner_text = f"당첨자: {display_name} (@{handle})\n"
+            text_widget.insert(tk.END, winner_text)
+        text_widget.insert(tk.END, "\n")  # 구분선
+
+    # 당첨자가 없으면
+    if not likes_winners and not reposted_winners:
+        text_widget.insert(tk.END, "당첨자가 없습니다.\n")
+
+    text_widget.config(state=tk.DISABLED)
+
+    clear_button = tk.Button(winners_window, text="당첨자 목록 초기화", command=lambda: clean_winners_file(winners_window, likes_filename))
+    clear_button.pack(pady=5)  # 초기화 버튼
+
+
+
+
+# 유튜브 추첨하기 버튼 클릭 시 실행되는 함수
 def pick_youtube_winner_gui():
-    video_id = video_id_entry.get()  # 입력란에서 비디오 ID 가져오기
+    video_id = video_id_entry.get()  # 입력된 비디오 ID 가져오기
     if not video_id:
-        messagebox.showwarning("경고", "비디오 ID를 입력하세요.")  # 비디오 ID가 없을 경우 경고 메시지
+        messagebox.showwarning("경고", "비디오 ID를 입력하세요.")  # 비디오 ID가 없으면 경고 메시지
         return
 
     try:
-        yt_draw = YouTubeDraw(YOUTUBE_API_KEY)  # 유튜브 추첨 객체 생성
-        winner_data = yt_draw.pick_youtube_winner(video_id)  # 추첨 실행
-        winner_name, winner_comment = winner_data  # 당첨자와 댓글을 분리하여 받기
+        yt_draw = YouTubeDraw(YOUTUBE_API_KEY)
+        winner_data = yt_draw.pick_youtube_winner(video_id)  # 유튜브 추첨
+        winner_name, winner_comment = winner_data
         if winner_name is None:
-            messagebox.showinfo("정보", winner_comment)  # 당첨자가 없을 경우 안내 메시지
+            messagebox.showinfo("정보", winner_comment)  # 당첨자가 없으면 메시지
         else:
-            messagebox.showinfo("당첨자", f"당첨자: {winner_name} - 댓글: {winner_comment}")  # 당첨자 정보 표시
+            messagebox.showinfo("당첨자", f"당첨자: {winner_name} - 댓글: {winner_comment}")  # 당첨자 표시
     except Exception as e:
-        messagebox.showerror("오류", f"추첨 중 오류 발생: {str(e)}")  # 추첨 중 오류 발생 시 메시지 표시
+        messagebox.showerror("오류", f"추첨 중 오류 발생: {str(e)}")  # 오류 처리
 
-
-# 블루스카이 추첨 실행 함수 (스레드 사용)
-def post_to_bluesky(username, password, url):
+def post_to_bluesky(username, password, url, draw_type):
     try:
-        # BlueskyDraw 인스턴스 생성
         bsky_draw = BlueskyDraw(username, password, url)
-        
-        # 추첨 결과 얻기
-        result = bsky_draw.post_result()
 
-        # result가 None이 아니고, 'text' 키가 있는지 확인
-        if result and 'text' in result:  
+        # 추첨 대상 데이터를 가져오기
+        if draw_type == "likes":
+            result = bsky_draw.random_pick(target_type='likes')  # 무작위 추첨
+        elif draw_type == "reposted":
+            result = bsky_draw.random_pick(target_type='reposted')  # 무작위 추첨
+        else:
+            raise ValueError("추첨 타입이 잘못되었습니다.")
+
+        # 결과 유효성 확인
+        if result and 'handle' in result:
             result_window = tk.Toplevel(root)
             result_window.title("추첨 결과")
-            result_window.attributes('-topmost', True)
-    
-            result_text = f"추첨 결과가 성공적으로 게시되었습니다!\n당첨자: {result['text']}"
+            result_window.attributes('-topmost', True)  # 결과 창 최상위로 설정
+
+            # 결과 데이터 준비
+            display_name = result.get('displayName', result['handle'])
+            result_text = f"축하드립니다! 당첨자: {display_name} (@{result['handle']})"
+
+            # 결과 표시
             tk.Label(result_window, text=result_text, padx=20, pady=20).pack()
 
-            # 당첨자 정보를 저장합니다.
-            # 블루스카이 추첨 객체의 save_winner 메서드를 호출
-            bsky_draw.save_winner({"platform": "Bluesky", "name": result['text'], "handle": result['handle']}, "bluesky_winner.json")
+            # 게시를 수행하는 버튼
+            def post_winner():
+                try:
+                    # BlueskyDraw의 post_result 메서드 호출
+                    post_result_response = bsky_draw.post_result()
+                    print("게시물 생성 결과:", post_result_response)  # 디버깅을 위한 출력
+
+                    # 성공 메시지 표시
+                    messagebox.showinfo("성공", "추첨 결과가 성공적으로 게시되었습니다!")
+                    result_window.destroy()
+                except Exception as e:
+                    messagebox.showerror("오류", f"게시 중 오류 발생: {str(e)}")
+                        # 게시하지 않음 버튼 (게시하지 않고 당첨자 정보를 저장만 함)
+
+            def cancel_post():
+                try:
+                    # 당첨자 정보를 JSON에 저장만 함
+                    bsky_draw.save_winner({
+                        "platform": "Bluesky", 
+                        "handle": result['handle'], 
+                        "displayName": display_name
+                    }, target_type=draw_type)  # draw_type을 target_type으로 전달
+                    print("게시하지 않고 당첨자 정보를 저장했습니다.")  # 디버깅용 메시지
+
+                    # 취소 메시지 표시
+                    messagebox.showinfo("정보", "추첨 결과가 저장되었습니다. 게시되지 않았습니다.")
+                    result_window.destroy()
+                except Exception as e:
+                    messagebox.showerror("오류", f"저장 중 오류 발생: {str(e)}")
+
+
+            # 게시 버튼 추가
+            post_button = tk.Button(result_window, text="결과 게시하기", command=post_winner)
+            post_button.pack(pady=10)
+
+            cancel_button = tk.Button(result_window, text="게시하지 않기", command=cancel_post)
+            cancel_button.pack(pady=5)
         else:
-            # 결과가 없으면 에러 메시지 표시
-            messagebox.showwarning("경고", "결과를 가져올 수 없습니다. 추첨을 다시 시도해주세요.")
+            messagebox.showwarning("경고", "결과를 가져올 수 없습니다. 추첨을 다시 시도해주세요.")  # 결과 없음 경고
 
     except ValueError as ve:
-        # 로그인 오류 처리
         messagebox.showerror("오류", f"로그인 실패: {str(ve)}")
     except Exception as e:
-        # 다른 오류 처리
         messagebox.showerror("오류", f"오류 발생: {str(e)}")
 
-# 블루스카이 추첨 실행 함수 (스레드 시작)
+
+# 블루스카이 추첨 스레드 시작 함수
 def start_bluesky_draw():
-    username = bsky_username_entry.get()  # 사용자 이름 가져오기
-    password = bsky_password_entry.get()  # 비밀번호 가져오기
-    url = bsky_url_entry.get()  # 추첨할 URL 가져오기
+    username = bsky_username_entry.get()
+    password = bsky_password_entry.get()
+    url = bsky_url_entry.get()
+    draw_type = bsky_draw_type.get()
 
     if not username or not password or not url:
-        messagebox.showwarning("경고", "모든 필드를 입력하세요.")  # 필드가 비어있으면 경고
+        messagebox.showwarning("경고", "모든 필드를 입력하세요.")  # 필드가 비어 있으면 경고
         return
 
-    # 별도의 스레드에서 Bluesky 추첨 함수 실행
-    threading.Thread(target=post_to_bluesky, args=(username, password, url)).start()
+    threading.Thread(target=post_to_bluesky, args=(username, password, url, draw_type)).start()  # 별도의 스레드에서 실행
 
-# 메인 GUI를 생성하는 함수
+# 메인 GUI를 설정하는 함수
 def create_main_gui():
     global root
-    root = tk.Tk()  # 메인 윈도우 생성
-    root.title("유튜브 및 블루스카이 추첨기")  # 창 제목 설정
-    root.geometry("1000x600")  # 창 크기 설정
+    root = tk.Tk()
+    root.title("유튜브 및 블루스카이 추첨기")
+    root.geometry("1000x600")
 
-    menu_bar = Menu(root)  # 메뉴바 생성
+    menu_bar = Menu(root)  # 메뉴 바 생성
 
-    # 유튜브 메뉴 설정
     youtube_menu = Menu(menu_bar, tearoff=0)
     youtube_menu.add_command(label="유튜브 추첨하기", command=open_youtube)  # 유튜브 추첨 메뉴
-    youtube_menu.add_command(label="당첨자 목록 보기", command=lambda: show_winners_window("YouTube"))  # 유튜브 당첨자 목록 보기
+    youtube_menu.add_command(label="당첨자 목록 보기", command=lambda: show_winners_window("YouTube"))  # 유튜브 당첨자 목록 메뉴
     menu_bar.add_cascade(label="유튜브", menu=youtube_menu)
 
-    # 블루스카이 메뉴 설정
     bluesky_menu = Menu(menu_bar, tearoff=0)
     bluesky_menu.add_command(label="블루스카이 추첨하기", command=open_bluesky)  # 블루스카이 추첨 메뉴
-    bluesky_menu.add_command(label="당첨자 목록 보기", command=lambda: show_winners_window("Bluesky"))  # 블루스카이 당첨자 목록 보기
+    bluesky_menu.add_command(label="당첨자 목록 보기", command=lambda: show_winners_window("Bluesky"))  # 블루스카이 당첨자 목록 메뉴
     menu_bar.add_cascade(label="블루스카이", menu=bluesky_menu)
 
-    root.config(menu=menu_bar)  # 메뉴바 추가
+    root.config(menu=menu_bar)
 
-    create_youtube_interface(root)  # 초기 유튜브 인터페이스 생성
+    create_youtube_interface(root)  # 초기 화면은 유튜브 인터페이스로 설정
 
-    return root  # 메인 윈도우 반환
+    return root
 
-# 유튜브 입력란 및 버튼 생성 함수
+# 유튜브 인터페이스 생성
 def create_youtube_interface(root):
     global video_id_label, video_id_entry, pick_youtube_button
 
-    video_id_label = tk.Label(root, text="비디오 ID 입력:")  # 비디오 ID 입력란 레이블
-    video_id_entry = tk.Entry(root, width=50)  # 비디오 ID 입력란
-    pick_youtube_button = tk.Button(root, text="유튜브 추첨하기", command=pick_youtube_winner_gui)  # 유튜브 추첨 버튼
+    video_id_label = tk.Label(root, text="비디오 ID 입력:")
+    video_id_entry = tk.Entry(root, width=50)
+    pick_youtube_button = tk.Button(root, text="유튜브 추첨하기", command=pick_youtube_winner_gui)
 
     video_id_label.pack(pady=10)
     video_id_entry.pack(pady=10)
     pick_youtube_button.pack(pady=20)
 
-# 블루스카이 입력란 및 버튼 생성 함수
+# 블루스카이 인터페이스 생성
 def create_bluesky_interface(root):
-    global bsky_username_label, bsky_username_entry, bsky_password_label, bsky_password_entry, bsky_url_label, bsky_url_entry, bsky_pick_button
+    global bsky_username_label, bsky_username_entry, bsky_password_label, bsky_password_entry, bsky_url_label, bsky_url_entry, bsky_pick_button, bsky_draw_type
 
-    bsky_username_label = tk.Label(root, text="블루스카이 사용자 이름:")  # 사용자 이름 레이블
-    bsky_username_entry = tk.Entry(root, width=50)  # 사용자 이름 입력란
-    bsky_password_label = tk.Label(root, text="블루스카이 비밀번호:")  # 비밀번호 레이블
-    bsky_password_entry = tk.Entry(root, width=50, show="*")  # 비밀번호 입력란
-    bsky_url_label = tk.Label(root, text="포스트 URL:")  # 포스트 URL 레이블
-    bsky_url_entry = tk.Entry(root, width=50)  # URL 입력란
-    bsky_pick_button = tk.Button(root, text="블루스카이 추첨하기", command=start_bluesky_draw)  # 블루스카이 추첨 버튼
+    bsky_username_label = tk.Label(root, text="블루스카이 사용자 이름:")
+    bsky_username_entry = tk.Entry(root, width=50)
+    bsky_password_label = tk.Label(root, text="블루스카이 비밀번호:")
+    bsky_password_entry = tk.Entry(root, width=50, show="*")
+    bsky_url_label = tk.Label(root, text="블루스카이 URL:")
+    bsky_url_entry = tk.Entry(root, width=50)
+    
+    bsky_draw_type = tk.StringVar()
+    bsky_draw_type.set("likes")  # 기본값 설정
+    
+    likes_radio = tk.Radiobutton(root, text="좋아요 추첨", variable=bsky_draw_type, value="likes")
+    repost_radio = tk.Radiobutton(root, text="리트윗 추첨", variable=bsky_draw_type, value="reposted")
+    
+    bsky_pick_button = tk.Button(root, text="블루스카이 추첨하기", command=start_bluesky_draw)
 
-    bsky_username_label.pack(pady=10)
-    bsky_username_entry.pack(pady=10)
-    bsky_password_label.pack(pady=10)
-    bsky_password_entry.pack(pady=10)
-    bsky_url_label.pack(pady=10)
-    bsky_url_entry.pack(pady=10)
+    bsky_username_label.pack(pady=5)
+    bsky_username_entry.pack(pady=5)
+    bsky_password_label.pack(pady=5)
+    bsky_password_entry.pack(pady=5)
+    bsky_url_label.pack(pady=5)
+    bsky_url_entry.pack(pady=5)
+    likes_radio.pack(pady=5)
+    repost_radio.pack(pady=5)
     bsky_pick_button.pack(pady=20)
 
-# 유튜브 인터페이스 생성 함수
+# 유튜브 인터페이스를 여는 함수
 def open_youtube():
-    # 기존 위젯 제거 (메뉴바 제외)
-    for widget in root.winfo_children():
-        if isinstance(widget, tk.Menu):
-            continue  # 메뉴바는 제거하지 않음
-        widget.destroy()
-    
-    # 유튜브 인터페이스 생성
-    create_youtube_interface(root)
+    clear_interface()  # 기존 인터페이스를 지우고 새로운 인터페이스로 변경
+    create_youtube_interface(root)  # 유튜브 인터페이스 생성
 
-# 블루스카이 인터페이스 생성 함수
+# 블루스카이 인터페이스를 여는 함수
 def open_bluesky():
-    # 기존 위젯 제거 (메뉴바 제외)
+    clear_interface()  # 기존 인터페이스를 지우고 새로운 인터페이스로 변경
+    create_bluesky_interface(root)  # 블루스카이 인터페이스 생성
+
+# 기존 인터페이스를 지우는 함수
+def clear_interface():
     for widget in root.winfo_children():
         if isinstance(widget, tk.Menu):
             continue  # 메뉴바는 제거하지 않음
-        widget.destroy()
-    
-    # 블루스카이 인터페이스 생성
-    create_bluesky_interface(root)
+        widget.destroy()  # 나머지 위젯들은 제거
 
-# 메인 함수
 if __name__ == "__main__":
-    root = create_main_gui()  # 메인 GUI 생성
-    root.mainloop()  # 이벤트 루프 실행
+    root = create_main_gui()  # 메인 GUI 실행
+    root.mainloop()  # GUI 루프 시작

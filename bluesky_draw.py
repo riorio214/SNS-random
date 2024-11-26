@@ -100,22 +100,28 @@ class BlueskyDraw:
         return liked_by  # 전체 좋아요한 사용자 목록 반환
 
     # 당첨자를 JSON 파일에 저장하는 함수
-    def save_winner(self, winner, filename='bluesky_winner.json'):
+    def save_winner(self, winner, target_type, filename='bluesky_winner.json'):
         # 'displayName'이 없는 경우에는 '알 수 없음' 처리
         if not winner.get('displayName'):
             winner['displayName'] = "알 수 없음"  # displayName이 없으면 '알 수 없음'으로 대체
-    
+
+        # 타겟 타입에 따라 다른 파일로 저장
+        if target_type == "likes":
+            filename = 'bluesky_likes_winner.json'  # 좋아요 추첨은 별도의 파일에 저장
+        elif target_type == "reposted":
+            filename = 'bluesky_reposted_winner.json'  # 리트윗 추첨은 별도의 파일에 저장
+
         try:
             with open(filename, 'r+', encoding='utf-8') as f:
                 try:
                     winners = json.load(f)  # 기존의 당첨자 목록을 불러옴
                 except json.JSONDecodeError:
                     winners = []  # 파일이 비어있을 경우 빈 리스트로 초기화
-    
+
                 # 중복된 당첨자가 이미 있는지 확인하고 없으면 추가
                 if not any(existing_winner['handle'] == winner['handle'] for existing_winner in winners):
                     winners.append(winner)  # 새로운 당첨자 추가
-    
+
                 f.seek(0)  # 파일의 시작 위치로 이동
                 json.dump(winners, f, ensure_ascii=False, indent=4)  # 리스트를 JSON 형식으로 저장
                 f.truncate()  # 파일의 나머지 부분을 지워서 덮어쓰기
@@ -125,8 +131,15 @@ class BlueskyDraw:
                 json.dump([winner], f, ensure_ascii=False, indent=4)  # 첫 당첨자 저장
 
 
+
     # 기존 당첨자 목록을 불러오는 함수
-    def load_winners(self, filename='bluesky_winner.json'):
+    def load_winners(self, target_type, filename='bluesky_winner.json'):
+        # 타겟 타입에 따라 파일명을 다르게 설정
+        if target_type == "likes":
+            filename = 'bluesky_likes_winner.json'
+        elif target_type == "reposted":
+            filename = 'bluesky_reposted_winner.json'
+
         try:
             # 파일이 존재할 경우 내용을 읽어 JSON 형식으로 반환
             with open(filename, 'r', encoding='utf-8') as f:
@@ -135,13 +148,13 @@ class BlueskyDraw:
             winners = []  # 파일이 없거나 JSON 형식이 아닐 경우 빈 리스트 반환
         return winners  # 당첨자 목록 반환
 
-    # 무작위로 당첨자를 추첨하는 함수
+
     def random_pick(self, target_type="reposted"):
         # target_type에 따라 추첨 대상을 설정
         if target_type == "likes":
-            pool = [user for user in self.get_all_likes() if user['handle'] != self.username]
+            pool = [user for user in self.get_all_likes() if user['handle'] != self.username]  # 좋아요 누른 사용자
         elif target_type == "reposted":
-            pool = [user for user in self.get_all_reposted_by() if user['handle'] != self.username]
+            pool = [user for user in self.get_all_reposted_by() if user['handle'] != self.username]  # 리트윗한 사용자
         else:
             raise ValueError("잘못된 추첨 타입입니다. 'likes' 또는 'reposted'만 가능합니다.")
 
@@ -150,7 +163,7 @@ class BlueskyDraw:
             raise ValueError("참여자가 없습니다. 목록을 확인하세요.")
 
         # 중복 당첨을 방지하여 아직 당첨되지 않은 사용자들만 추출
-        picked_winners = self.load_winners()
+        picked_winners = self.load_winners(target_type)
         pool = [user for user in pool if user['handle'] not in [winner['handle'] for winner in picked_winners]]
 
         if not pool:
@@ -159,19 +172,20 @@ class BlueskyDraw:
         return random.choice(pool)  # 무작위로 한 명 선택
 
 
+
     # 당첨 결과를 게시하는 함수
     def post_result(self):
         user = self.random_pick()  # 무작위로 당첨자 추첨
         display_name = user.get('displayName', user['handle'])  # 당첨자의 표시 이름 가져오기
         print(f"Draw result: {display_name} (@{user['handle']})")  # 콘솔에 당첨자 정보 출력
-    
+
         # 당첨자가 '알 수 없음'인 경우, 다른 값으로 대체
         if display_name == "알 수 없음" or not display_name:
             display_name = user['handle']  # '알 수 없음'인 경우 handle로 대체
-    
+
         txt = f"축하드립니다! {display_name} (@{user['handle']}) 당첨되셨습니다!!"  # 축하 메시지 작성
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')  # 현재 시간을 UTC로 표시
-    
+
         headers = {"Authorization": "Bearer " + self.session.ATP_AUTH_TOKEN}  # 인증 토큰 설정
         data = {
             "collection": "app.bsky.feed.post",  # 게시물 타입 설정
@@ -183,20 +197,20 @@ class BlueskyDraw:
                 "text": txt
             }
         }
-    
+
         resp = requests.post(
             self.session.ATP_HOST + "/xrpc/com.atproto.repo.createRecord",  # Bluesky API를 통해 게시물 작성
             json=data,
             headers=headers
         )
-    
+
         if resp.status_code == 200:  # 게시 성공 시
             rkey = resp.json()['uri'].split('/')[-1]
             print(f"축하드립니다!: https://bsky.app/profile/{self.username}/post/{rkey}")  # 게시물 링크 출력
-    
-            # 당첨자 정보를 파일에 저장
-            self.save_winner({"platform": "Bluesky", "handle": user['handle'], "displayName": display_name})
-    
+
+            # 당첨자 정보를 파일에 저장 (target_type="reposted")
+            self.save_winner({"platform": "Bluesky", "handle": user['handle'], "displayName": display_name}, target_type="reposted")
+
             return {"text": txt, "handle": user['handle']}  # 결과 반환
         else:
             raise Exception("결과 게시에 실패했습니다.")  # 게시 실패 시 예외 발생
